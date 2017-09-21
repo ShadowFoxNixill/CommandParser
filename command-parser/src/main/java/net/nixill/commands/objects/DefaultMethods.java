@@ -10,7 +10,9 @@ import com.vdurmont.emoji.Emoji;
 import com.vdurmont.emoji.EmojiManager;
 
 import net.nixill.commands.annotations.Deserializer;
+import net.nixill.commands.annotations.Restrict;
 import net.nixill.commands.exceptions.DeserializationException;
+import net.nixill.commands.exceptions.InvalidRestrictionError;
 import sx.blah.discord.handle.obj.IChannel;
 import sx.blah.discord.handle.obj.IRole;
 import sx.blah.discord.handle.obj.IUser;
@@ -83,13 +85,21 @@ public final class DefaultMethods {
    * @return The deserialized String.
    */
   @Deserializer
-  public static String deserializeString(ArrayList<String> values, int howMany) {
+  public static String deserializeString(ArrayList<String> values, int howMany, Restrict rest) {
     String out = "";
     int max = Math.min(values.size(), howMany);
     for (int i = 0; i < max; i++) {
       if (i != 0) out += " ";
       out += values.remove(0);
     }
+    
+    if (rest != null) {
+      while (!out.matches(rest.value()) && !values.isEmpty()) {
+        out += " " + values.remove(0);
+      }
+      if (!out.matches(rest.value())) { throw deserializationRestriction(out, rest); }
+    }
+    
     return out;
   }
   
@@ -107,10 +117,15 @@ public final class DefaultMethods {
    * @return The deserialized double.
    */
   @Deserializer
-  public static double deserializePDouble(ArrayList<String> values, int howMany) {
+  public static double deserializePDouble(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Double.parseDouble(value);
+      double out = Double.parseDouble(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -132,11 +147,11 @@ public final class DefaultMethods {
    * @return The deserialized double array.
    */
   @Deserializer
-  public static double[] deserializePADouble(ArrayList<String> values, int howMany) {
+  public static double[] deserializePADouble(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     double[] out = new double[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePDouble(values, 1);
+      out[i] = deserializePDouble(values, 1, rest);
     }
     return out;
   }
@@ -157,8 +172,8 @@ public final class DefaultMethods {
    * @return The deserialized Double.
    */
   @Deserializer
-  public static Double deserializeDouble(ArrayList<String> values, int howMany) {
-    return deserializePDouble(values, howMany);
+  public static Double deserializeDouble(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePDouble(values, howMany, rest);
   }
   
   /**
@@ -175,10 +190,15 @@ public final class DefaultMethods {
    * @return The deserialized float.
    */
   @Deserializer
-  public static float deserializePFloat(ArrayList<String> values, int howMany) {
+  public static float deserializePFloat(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Float.parseFloat(value);
+      float out = Float.parseFloat(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -200,11 +220,11 @@ public final class DefaultMethods {
    * @return The deserialized float array.
    */
   @Deserializer
-  public static float[] deserializePAFloat(ArrayList<String> values, int howMany) {
+  public static float[] deserializePAFloat(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     float[] out = new float[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePFloat(values, 1);
+      out[i] = deserializePFloat(values, 1, rest);
     }
     return out;
   }
@@ -225,8 +245,8 @@ public final class DefaultMethods {
    * @return The deserialized Float.
    */
   @Deserializer
-  public static Float deserializeFloat(ArrayList<String> values, int howMany) {
-    return deserializePFloat(values, howMany);
+  public static Float deserializeFloat(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePFloat(values, howMany, rest);
   }
   
   /**
@@ -243,10 +263,15 @@ public final class DefaultMethods {
    * @return The deserialized byte.
    */
   @Deserializer
-  public static byte deserializePByte(ArrayList<String> values, int howMany) {
+  public static byte deserializePByte(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Byte.parseByte(value);
+      byte out = Byte.parseByte(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -268,11 +293,11 @@ public final class DefaultMethods {
    * @return The deserialized byte array.
    */
   @Deserializer
-  public static byte[] deserializePAByte(ArrayList<String> values, int howMany) {
+  public static byte[] deserializePAByte(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     byte[] out = new byte[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePByte(values, 1);
+      out[i] = deserializePByte(values, 1, rest);
     }
     return out;
   }
@@ -293,8 +318,8 @@ public final class DefaultMethods {
    * @return The deserialized Byte.
    */
   @Deserializer
-  public static Byte deserializeByte(ArrayList<String> values, int howMany) {
-    return deserializePByte(values, howMany);
+  public static Byte deserializeByte(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePByte(values, howMany, rest);
   }
   
   /**
@@ -311,10 +336,15 @@ public final class DefaultMethods {
    * @return The deserialized short.
    */
   @Deserializer
-  public static short deserializePShort(ArrayList<String> values, int howMany) {
+  public static short deserializePShort(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Short.parseShort(value);
+      short out = Short.parseShort(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -336,11 +366,11 @@ public final class DefaultMethods {
    * @return The deserialized short array.
    */
   @Deserializer
-  public static short[] deserializePAShort(ArrayList<String> values, int howMany) {
+  public static short[] deserializePAShort(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     short[] out = new short[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePShort(values, 1);
+      out[i] = deserializePShort(values, 1, rest);
     }
     return out;
   }
@@ -361,8 +391,8 @@ public final class DefaultMethods {
    * @return The deserialized Short.
    */
   @Deserializer
-  public static Short deserializeShort(ArrayList<String> values, int howMany) {
-    return deserializePShort(values, howMany);
+  public static Short deserializeShort(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePShort(values, howMany, rest);
   }
   
   /**
@@ -379,10 +409,15 @@ public final class DefaultMethods {
    * @return The deserialized int.
    */
   @Deserializer
-  public static int deserializePInteger(ArrayList<String> values, int howMany) {
+  public static int deserializePInteger(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Integer.parseInt(value);
+      int out = Integer.parseInt(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -404,11 +439,11 @@ public final class DefaultMethods {
    * @return The deserialized int array.
    */
   @Deserializer
-  public static int[] deserializePAInteger(ArrayList<String> values, int howMany) {
+  public static int[] deserializePAInteger(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     int[] out = new int[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePInteger(values, 1);
+      out[i] = deserializePInteger(values, 1, rest);
     }
     return out;
   }
@@ -429,8 +464,8 @@ public final class DefaultMethods {
    * @return The deserialized Double.
    */
   @Deserializer
-  public static Integer deserializeInteger(ArrayList<String> values, int howMany) {
-    return deserializePInteger(values, howMany);
+  public static Integer deserializeInteger(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePInteger(values, howMany, rest);
   }
   
   /**
@@ -447,10 +482,15 @@ public final class DefaultMethods {
    * @return The deserialized long.
    */
   @Deserializer
-  public static long deserializePLong(ArrayList<String> values, int howMany) {
+  public static long deserializePLong(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     try {
-      return Long.parseLong(value);
+      Long out = Long.parseLong(value);
+      if (rest == null || meetsCondition(rest.value(), out)) {
+        return out;
+      } else {
+        throw deserializationRestriction(value, rest);
+      }
     } catch (NumberFormatException ex) {
       throw new DeserializationException("Can't convert " + value + " to a number.");
     }
@@ -472,11 +512,11 @@ public final class DefaultMethods {
    * @return The deserialized long array.
    */
   @Deserializer
-  public static long[] deserializePALong(ArrayList<String> values, int howMany) {
+  public static long[] deserializePALong(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     long[] out = new long[max];
     for (int i = 0; i < max; i++) {
-      out[i] = deserializePLong(values, 1);
+      out[i] = deserializePLong(values, 1, rest);
     }
     return out;
   }
@@ -497,8 +537,8 @@ public final class DefaultMethods {
    * @return The deserialized Double.
    */
   @Deserializer
-  public static Long deserializeLong(ArrayList<String> values, int howMany) {
-    return deserializePLong(values, howMany);
+  public static Long deserializeLong(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePLong(values, howMany, rest);
   }
   
   /**
@@ -685,19 +725,19 @@ public final class DefaultMethods {
    * <th>Value</th>
    * </tr>
    * <tr>
-   * <td>(empty), sp, space, \s:</td>
+   * <td>(empty), sp, space, \s</td>
    * <td>A space character</td>
    * </tr>
    * <tr>
-   * <td>nl, newline, new_line, \n:</td>
+   * <td>nl, newline, new_line, \n</td>
    * <td>A newline character (\n)</td>
    * </tr>
    * <tr>
-   * <td>re, return, \r:</td>
+   * <td>re, return, \r</td>
    * <td>A return character (\r)</td>
    * </tr>
    * <tr>
-   * <td>tab, \t:</td>
+   * <td>tab, \t</td>
    * <td>A tab character (\t)</td>
    * </tr>
    * <tr>
@@ -716,33 +756,44 @@ public final class DefaultMethods {
    * @return The deserialized char.
    */
   @Deserializer
-  public static char deserializePCharacter(ArrayList<String> values, int howMany) {
+  public static char deserializePCharacter(ArrayList<String> values, int howMany, Restrict rest) {
     String value = values.remove(0);
     String valueLC = value.toLowerCase();
+    char out = '\0';
     switch (valueLC) {
       case "":
       case "sp":
       case "space":
       case "\\s":
-        return ' ';
+        out = ' ';
+        break;
       case "nl":
       case "newline":
       case "new_line":
       case "\\n":
-        return '\n';
+        out = '\n';
+        break;
       case "re":
       case "return":
       case "\\r":
-        return '\r';
+        out = '\r';
+        break;
       case "tab":
       case "\\t":
-        return '\t';
+        out = '\t';
+        break;
       case "\\\\":
-        return '\\';
+        out = '\\';
+        break;
+      default:
+        if (value.length() > 1 && !charDropSilently)
+          throw new DeserializationException("\"" + value + "\" is not a valid character.");
+        out = value.charAt(0);
     }
-    if (value.length() > 1 && !charDropSilently)
-      throw new DeserializationException("\"" + value + "\" is not a valid character.");
-    return value.charAt(0);
+    if (rest == null || String.valueOf(out).matches("[" + rest + "]"))
+      return out;
+    else
+      throw deserializationRestriction(value, rest);
   }
   
   /**
@@ -763,7 +814,7 @@ public final class DefaultMethods {
    * @return The deserialized double array.
    */
   @Deserializer
-  public static char[] deserializePACharacter(ArrayList<String> values, int howMany) {
+  public static char[] deserializePACharacter(ArrayList<String> values, int howMany, Restrict rest) {
     int max = Math.min(values.size(), howMany);
     String toArray = "";
     for (int i = 0; i < max; i++) {
@@ -776,7 +827,10 @@ public final class DefaultMethods {
     toArray.replaceAll("\\\\t", "\t");
     toArray.replaceAll("\\\\s", " ");
     toArray.replaceAll("\\ue000", "\\");
-    return toArray.toCharArray();
+    if (rest == null || toArray.matches(rest.value()))
+      return toArray.toCharArray();
+    else
+      throw new DeserializationException("\"" + toArray + "\" is not a valid input.");
   }
   
   /**
@@ -795,8 +849,8 @@ public final class DefaultMethods {
    * @return The deserialized Double.
    */
   @Deserializer
-  public static Character deserializeCharacter(ArrayList<String> values, int howMany) {
-    return deserializePCharacter(values, howMany);
+  public static Character deserializeCharacter(ArrayList<String> values, int howMany, Restrict rest) {
+    return deserializePCharacter(values, howMany, rest);
   }
   
   /**
@@ -912,5 +966,157 @@ public final class DefaultMethods {
     emoji = EmojiManager.getForAlias(value);
     if (emoji != null) return emoji;
     throw new DeserializationException(valueOrig + " is not a custom emoji.");
+  }
+  
+  @Deserializer
+  public static Matcher deserializeMatcher(ArrayList<String> values, int howMany, Restrict rest) {
+    if (rest == null)
+      throw new InvalidRestrictionError("Matcher parameters *must* have a regex @Restrict to match against.");
+    String value = deserializeString(values, howMany, null);
+    
+    while (!value.matches(rest.value()) && !values.isEmpty()) {
+      value += " " + values.remove(0);
+    }
+    
+    Matcher mtc = Pattern.compile(rest.value()).matcher(value);
+    
+    if (!mtc.matches()) { throw deserializationRestriction(value, rest); }
+    
+    return mtc;
+  }
+  
+  private static boolean meetsCondition(String condition, long in) {
+    condition = condition.replaceAll("[ \\t\\n\\r]", "");
+    String[] ands = condition.split("&");
+    for (String and : ands) {
+      String[] ors = and.split("\\|");
+      boolean satisfiedInner = false;
+      for (String or : ors) {
+        String kw = or.toLowerCase().replaceAll("\\-", "");
+        switch (kw) {
+          case "positive":
+            or = ">0";
+            break;
+          case "negative":
+            or = "<0";
+            break;
+          case "nonpositive":
+            or = "<=0";
+            break;
+          case "nonnegative":
+            or = ">=0";
+            break;
+          case "even":
+            or = "%2";
+            break;
+          case "odd":
+            or = "!%2";
+            break;
+        }
+        
+        Matcher mtc = Pattern.compile("(!?)([><]?=|[><]|\\^|%)(-?\\d+)").matcher(or);
+        if (!mtc.matches()) throw new InvalidRestrictionError("The condition " + or + " is not valid.");
+        
+        long number = Long.parseLong(mtc.group(3));
+        boolean invert = mtc.group(1).matches("!");
+        String cond = mtc.group(2);
+        boolean satisfy = false;
+        
+        if (cond.equals(">="))
+          satisfy = (in >= number);
+        else if (cond.equals("<="))
+          satisfy = (in <= number);
+        else if (cond.equals(">"))
+          satisfy = (in > number);
+        else if (cond.equals("<"))
+          satisfy = (in < number);
+        else if (cond.equals("="))
+          satisfy = (in == number);
+        else if (cond.equals("%"))
+          satisfy = (in % number == 0);
+        else if (cond.equals("^")) {
+          double log = Math.log(in) / Math.log(number);
+          satisfy = (log == Math.floor(log));
+        }
+        
+        satisfy = (satisfy != invert);
+        
+        satisfiedInner = satisfiedInner | satisfy;
+      }
+      if (satisfiedInner == false) return false;
+    }
+    return true;
+  }
+  
+  private static boolean meetsCondition(String condition, double in) {
+    condition = condition.replaceAll("[ \\t\\n\\r\\-]", "");
+    String[] ands = condition.split("&");
+    for (String and : ands) {
+      String[] ors = and.split("\\|");
+      boolean satisfiedInner = false;
+      for (String or : ors) {
+        String kw = or.toLowerCase();
+        switch (kw) {
+          case "positive":
+            or = ">0";
+            break;
+          case "negative":
+            or = "<0";
+            break;
+          case "nonpositive":
+            or = "<=0";
+            break;
+          case "nonnegative":
+            or = ">=0";
+            break;
+          case "even":
+            or = "%2";
+            break;
+          case "odd":
+            or = "!%2";
+            break;
+        }
+        
+        Matcher mtc = Pattern.compile("(!?)([><]?=|[><]|\\^|%)(-?\\d*\\.\\d+)").matcher(or);
+        if (!mtc.matches()) throw new InvalidRestrictionError("The condition " + or + " is not valid.");
+        
+        double number = Double.parseDouble(mtc.group(3));
+        boolean invert = mtc.group(1).matches("!");
+        String cond = mtc.group(2);
+        boolean satisfy = false;
+        
+        if (cond.equals(">="))
+          satisfy = (in >= number);
+        else if (cond.equals("<="))
+          satisfy = (in <= number);
+        else if (cond.equals(">"))
+          satisfy = (in > number);
+        else if (cond.equals("<"))
+          satisfy = (in < number);
+        else if (cond.equals("="))
+          satisfy = (in == number);
+        else if (cond.equals("%"))
+          satisfy = (in % number == 0);
+        else if (cond.equals("^")) {
+          double log = Math.log(in) / Math.log(number);
+          satisfy = (log == Math.floor(log));
+        }
+        
+        satisfy = (satisfy != invert);
+        
+        satisfiedInner = satisfiedInner | satisfy;
+      }
+      if (satisfiedInner == false) return false;
+    }
+    return true;
+  }
+  
+  private static DeserializationException deserializationRestriction(Object out, Restrict rest) {
+    String errText = rest.error();
+    if (errText.isEmpty()) {
+      return new DeserializationException(out.toString() + " does not meet the restriction.", true);
+    } else {
+      return new DeserializationException(errText.replace("{INPUT}", out.toString()));
+    }
   }
 }

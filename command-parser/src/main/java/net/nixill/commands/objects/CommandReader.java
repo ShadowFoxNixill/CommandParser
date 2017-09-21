@@ -16,8 +16,9 @@ import com.vdurmont.emoji.Emoji;
 import net.nixill.commands.annotations.BotCommand;
 import net.nixill.commands.annotations.Combine;
 import net.nixill.commands.annotations.Deserializer;
-import net.nixill.commands.annotations.Serializer;
 import net.nixill.commands.annotations.OptParam;
+import net.nixill.commands.annotations.Restrict;
+import net.nixill.commands.annotations.Serializer;
 import net.nixill.commands.enums.MentionSetting;
 import net.nixill.commands.exceptions.DeserializationException;
 import net.nixill.commands.exceptions.InvalidCommandMethodError;
@@ -314,12 +315,21 @@ public class CommandReader {
    *          The object to fire it from.
    */
   private void addDeserializer(Method meth, Object obj) {
-    if (meth.getParameterCount() != 2) throw new InvalidDeserializationMethodError(
-        "Deserialization methods must have exactly two parameters - an ArrayList and an int.");
-    if (!meth.getParameterTypes()[0].equals(ArrayList.class)) throw new InvalidDeserializationMethodError(
-        "Deserialization methods must have exactly two parameters - an ArrayList and an int.");
-    if (!meth.getParameterTypes()[1].equals(int.class)) throw new InvalidDeserializationMethodError(
-        "Deserialization methods must have exactly two parameters - an ArrayList and an int.");
+    Parameter[] params = meth.getParameters();
+    int parCount = params.length;
+    if (parCount < 2) throw new InvalidDeserializationMethodError(
+        "Deserialization methods must have at least two parameters. The first two must be an ArrayList and an int.");
+    if (!params[0].getType().equals(ArrayList.class)) throw new InvalidDeserializationMethodError(
+        "Deserialization methods must have at least two parameters. The first two must be an ArrayList and an int.");
+    if (!params[1].getType().equals(int.class)) throw new InvalidDeserializationMethodError(
+        "Deserialization methods must have at least two parameters. The first two must be an ArrayList and an int.");
+    for (int i = 2; i < meth.getParameterCount(); i++) {
+      Class<?> cls = params[i].getType();
+      if (cls != IMessage.class && cls != Restrict.class && cls != Boolean.class
+          && cls == Boolean.TYPE) { throw new InvalidDeserializationMethodError(
+              "Deserialization methods can only have an IMessage, a Restrict annotation, or a boolean as additional "
+                  + "arguments."); }
+    }
     Class<?> ret = meth.getReturnType();
     deserializers.put(ret, meth);
     if (Modifier.isStatic(meth.getModifiers()))
@@ -337,14 +347,19 @@ public class CommandReader {
    *          The object to fire it from.
    */
   private void addSerializer(Method meth, Object obj) {
-    if (meth.getParameterCount() != 1) throw new InvalidSerializationMethodError(
-        "Serialization methods must have exactly one parameter - the type you wish to return from command methods.");
-    Class<?> in = meth.getParameterTypes()[0];
+    Class<?>[] parTypes = meth.getParameterTypes();
+    int parCount = parTypes.length;
+    if (parCount != 1 && parCount != 2) throw new InvalidSerializationMethodError(
+        "Serialization methods must have exactly one or two parameters - the type you wish to return from command "
+            + "methods, and optionally an IMessage.");
+    Class<?> in = parTypes[0];
     Class<?> ret = meth.getReturnType();
     if (!(ret.isAssignableFrom(String.class) || ret.isAssignableFrom(EmbedObject.class)
         || ret.isAssignableFrom(Emoji.class)
         || ret.isAssignableFrom(IEmoji.class))) { throw new InvalidDeserializationMethodError(
-            "Serialization methods must return either a String, EmbedObject, Emoji, or IEmoji."); }
+            "Serialization methods must return either a String, EmbedObject, Emoji, IEmoji, or void."); }
+    if (parCount == 2 && !parTypes[1].equals(IMessage.class)) throw new InvalidSerializationMethodError(
+        "Serialization methods with two parameters must take the command return type and IMessage, in that order.");
     serializers.put(in, meth);
     if (Modifier.isStatic(meth.getModifiers()))
       serializerObjects.put(in, null);
@@ -394,14 +409,6 @@ public class CommandReader {
             "Type " + clz.getName() + " has no String converter (try registering deserializers first).");
       } else if (!(deserializers.containsKey(cls) || cls.isEnum())) throw new InvalidCommandMethodError(
           "Type " + cls.getName() + " has no String converter (try registering deserializers first).");
-      OptParam opt = par.getAnnotation(OptParam.class);
-      // If the parameter is optional, ensure the default can deserialize - we
-      // don't want the user to get "invalid argument" for an optional because
-      // the developer.
-      if (opt != null) {
-        ArrayList<String> optList = new ArrayList<>(Arrays.asList(opt.value().split(" ")));
-        deserialize(cls, optList, -1);
-      }
     }
     
     // Make sure the main name isn't already taken.
@@ -494,7 +501,8 @@ public class CommandReader {
    */
   @EventSubscriber
   public void handle(MessageReceivedEvent event) {
-    String messageTxt = event.getMessage().getContent().trim();
+    IMessage msg = event.getMessage();
+    String messageTxt = msg.getContent().trim();
     
     // See if the message starts with a pre-mention
     boolean preMention = false;
@@ -618,13 +626,15 @@ public class CommandReader {
             if (!param.getType().isArray()) howMany = 1;
           }
           
+          Restrict rest = param.getAnnotation(Restrict.class);
+          
           try {
             Object parObj;
-            parObj = deserialize(param.getType(), paramStr, howMany);
+            parObj = deserialize(param.getType(), paramStr, howMany, msg, rest);
             params.add(parObj);
           } catch (DeserializationException ex) {
-            MessageSender.send(replyTarget, "Could not convert parameter " + (i + 1) + " to a(n) "
-                + param.getType().getSimpleName() + ": " + ex.getMessage());
+            MessageSender.send(replyTarget, "Parameter " + (i + 1) + " is invalid: "
+                + ex.getMessage());
             return;
           }
         }
@@ -642,10 +652,16 @@ public class CommandReader {
     Object retVal = null;
     try {
       retVal = meth.invoke(obj, args);
-    } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+    } catch (IllegalAccessException | IllegalArgumentException e) {
       MessageSender.send(replyTarget,
           "An error occurred because Nix didn't learn how Java Reflection works. .w. Have some details:\n"
               + e.toString() + "\n" + e.getStackTrace()[0] + "\n" + e.getStackTrace()[1]);
+    } catch (InvocationTargetException e) {
+      Throwable ex = e.getCause();
+      MessageSender.send(replyTarget,
+          "An error occurred. Have some details:\n"
+              + ex.toString() + "\n" + ex.getStackTrace()[0] + "\n" + ex.getStackTrace()[1] + "\n"
+              + ex.getStackTrace()[2] + "\n" + ex.getStackTrace()[3] + "\n" + ex.getStackTrace()[4]);
     }
     
     // Lastly, let's do something with the result.
@@ -657,7 +673,7 @@ public class CommandReader {
     Class<?> retType = retVal.getClass();
     if (!(retType.isAssignableFrom(String.class) || retType.isAssignableFrom(EmbedObject.class)
         || retType.isAssignableFrom(IEmoji.class) || retType.isAssignableFrom(Emoji.class))) {
-      retVal = serialize(retVal, methType);
+      retVal = serialize(retVal, methType, msg);
     }
     
     // If it's a string or EmbedObject, we're sending it at the reply target.
@@ -696,12 +712,16 @@ public class CommandReader {
    *          Either the value of the <code>@</code>{@link Combine} annotation,
    *          or <code>Integer.MAX_VALUE</code> for arrays/varargs and 1 for
    *          anything else.
+   * @param msg
+   *          The message that triggered this command.
+   * @param restriction
+   *          The <code>@</code>{@link Restrict} tag passed to the parameter.
    * @return The object to be sent to the command.
    */
   @SuppressWarnings("unchecked")
-  <E> E deserialize(Class<E> cls, ArrayList<String> values, int howMany) {
+  <E> E deserialize(Class<E> cls, ArrayList<String> values, int howMany, IMessage msg, Restrict restriction) {
     if (cls.isArray() && !deserializers.containsKey(cls)) {
-      return (E) deserializeArray(cls.getComponentType(), values, howMany);
+      return (E) deserializeArray(cls.getComponentType(), values, howMany, msg, restriction);
     } else if (cls.isEnum() && !deserializers.containsKey(cls)) {
       String value = values.remove(0);
       E[] constants = cls.getEnumConstants();
@@ -711,9 +731,28 @@ public class CommandReader {
       throw new DeserializationException(value + " is an invalid choice.");
     } else {
       try {
-        return (E) deserializers.get(cls).invoke(deserializerObjects.get(cls), values, howMany);
-      } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+        Method meth = deserializers.get(cls);
+        Object obj = deserializerObjects.get(cls);
+        Object[] inputs = new Object[meth.getParameterCount()];
+        Class<?>[] inputTypes = meth.getParameterTypes();
+        inputs[0] = values;
+        inputs[1] = howMany;
+        for (int i = 2; i < inputs.length; i++) {
+          Class<?> clz = inputTypes[i];
+          if (clz == IMessage.class) inputs[i] = msg;
+          if (clz == Restrict.class) inputs[i] = restriction;
+          // Forwards compatibility - the boolean is whether the message was
+          // deleted (true) or created (false).
+          if (clz == Boolean.TYPE || clz == Boolean.class) inputs[i] = Boolean.FALSE;
+        }
+        return (E) meth.invoke(obj, inputs);
+      } catch (IllegalAccessException | IllegalArgumentException ex) {
         throw new DeserializationException("The deserialization method for type " + cls.getSimpleName() + " failed.");
+      } catch (InvocationTargetException ex) {
+        Throwable th = ex.getCause();
+        if (th instanceof DeserializationException) throw (DeserializationException) th;
+        if (th instanceof Error) throw (Error) th;
+        else throw new DeserializationException(th);
       }
     }
   }
@@ -733,14 +772,18 @@ public class CommandReader {
    * @param howMany
    *          Either the value of the <code>@</code>{@link Combine} annotation,
    *          or <code>Integer.MAX_VALUE</code>.
+   * @param msg
+   *          The message that triggered this command.
+   * @param restriction
+   *          The <code>@</code>{@link Restrict} tag passed to the parameter.
    * @return
    */
   @SuppressWarnings("unchecked")
-  <E> E[] deserializeArray(Class<E> cls, ArrayList<String> values, int howMany) {
+  <E> E[] deserializeArray(Class<E> cls, ArrayList<String> values, int howMany, IMessage msg, Restrict restriction) {
     int maxSize = Math.min(values.size(), howMany);
     E[] array = (E[]) Array.newInstance(cls, maxSize);
     for (int i = 0; i < maxSize; i++) {
-      array[i] = deserialize(cls, values, 1);
+      array[i] = deserialize(cls, values, 1, msg, restriction);
     }
     return array;
   }
@@ -751,14 +794,20 @@ public class CommandReader {
    * 
    * @param input
    *          The object returned by the command method.
+   * @param msg
+   *          The message that triggered the command.
    * @return The object sent to the user by the bot.
    */
-  Object serialize(Object input, Class<?> type) {
+  Object serialize(Object input, Class<?> type, IMessage msg) {
     Method meth = serializers.get(type);
     Object obj = serializerObjects.get(type);
     if (meth != null) {
       try {
-        return meth.invoke(obj, input);
+        if (meth.getParameterCount() == 2) {
+          return meth.invoke(obj, input, msg);
+        } else {
+          return meth.invoke(obj, input);
+        }
       } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
         throw new SerializationException("The serialization method for type " + type.getSimpleName() + " failed.");
       }
